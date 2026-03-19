@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JSON Navigator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Static GitHub Pages app</p>
+          <h1>JSON Navigator</h1>
+          <p class="subtitle">Load a JSON file, browse its structure, and edit values on any screen size.</p>
+        </div>
+        <div class="header-actions">
+          <label class="button button-primary file-button" for="file-input">Open JSON</label>
+          <input id="file-input" type="file" accept="application/json,.json" />
+          <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="panel navigation-panel">
+          <div class="panel-header">
+            <h2>Structure</h2>
+            <input id="search-input" type="search" placeholder="Filter keys or paths" aria-label="Filter JSON keys" />
+          </div>
+          <p id="empty-state" class="empty-state">Choose a JSON file to start exploring.</p>
+          <nav id="tree-view" class="tree-view" aria-label="JSON navigation"></nav>
+        </aside>
+
+        <section class="panel detail-panel">
+          <div class="panel-header sticky">
+            <div>
+              <h2>Editor</h2>
+              <p id="selection-path" class="selection-path">No field selected</p>
+            </div>
+            <span id="dirty-indicator" class="pill">Saved</span>
+          </div>
+
+          <div id="editor-empty" class="editor-empty">
+            <h3>Ready when you are</h3>
+            <p>Pick a node from the structure view to inspect or edit it. Arrays and objects show summaries, while primitive values can be edited directly.</p>
+          </div>
+
+          <form id="editor-form" class="editor-form hidden">
+            <div class="editor-grid">
+              <label>
+                <span>Type</span>
+                <input id="value-type" type="text" readonly />
+              </label>
+              <label>
+                <span>Key</span>
+                <input id="value-key" type="text" readonly />
+              </label>
+            </div>
+
+            <label id="text-value-group" class="hidden">
+              <span>Value</span>
+              <textarea id="text-value" rows="8" placeholder="Enter a string value"></textarea>
+            </label>
+
+            <label id="number-value-group" class="hidden">
+              <span>Number</span>
+              <input id="number-value" type="number" step="any" />
+            </label>
+
+            <label id="boolean-value-group" class="hidden">
+              <span>Boolean</span>
+              <select id="boolean-value">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+
+            <label id="null-value-group" class="hidden">
+              <span>Null value</span>
+              <input type="text" value="null" readonly />
+            </label>
+
+            <label id="composite-value-group" class="hidden">
+              <span>Preview</span>
+              <textarea id="composite-value" rows="12" readonly></textarea>
+            </label>
+
+            <div class="editor-actions">
+              <button id="save-button" class="button button-primary" type="submit">Save changes</button>
+              <button id="reset-button" class="button button-secondary" type="button">Reset field</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <template id="tree-node-template">
+      <button class="tree-node" type="button">
+        <span class="tree-node-path"></span>
+        <span class="tree-node-summary"></span>
+      </button>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
