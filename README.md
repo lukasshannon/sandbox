@@ -9,7 +9,6 @@ A static, mobile-first web app for GitHub Pages that loads a local JSON file, re
 - Inspect path, key, and type details for the selected node.
 - Edit string, number, and boolean values, then download the updated JSON.
 - Responsive layout optimized for phones first and enhanced for larger screens.
-- Fast pre-indexed navigation that avoids rebuilding the entire JSON tree on every selection.
 
 ## GitHub Pages usage
 

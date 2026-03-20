@@ -2,16 +2,8 @@ const state = {
   sourceName: '',
   originalData: null,
   data: null,
-  selectedId: null,
+  selectedPath: '',
   filter: '',
-  index: {
-    nodes: [],
-    byId: new Map(),
-    visibleIds: [],
-    expanded: new Set(),
-    selectedElement: null,
-  },
-  dirtyPaths: new Set(),
 };
 
 const refs = {
@@ -36,15 +28,8 @@ const refs = {
   compositeValueGroup: document.querySelector('#composite-value-group'),
   compositeValue: document.querySelector('#composite-value'),
   resetButton: document.querySelector('#reset-button'),
+  nodeTemplate: document.querySelector('#tree-node-template'),
 };
-
-const hiddenGroups = [
-  refs.textValueGroup,
-  refs.numberValueGroup,
-  refs.booleanValueGroup,
-  refs.nullValueGroup,
-  refs.compositeValueGroup,
-];
 
 const isComposite = (value) => value !== null && typeof value === 'object';
 const clone = (value) => structuredClone(value);
@@ -53,171 +38,40 @@ function describeValue(value) {
   if (Array.isArray(value)) return `Array (${value.length} items)`;
   if (value === null) return 'null';
   if (typeof value === 'object') return `Object (${Object.keys(value).length} keys)`;
-  if (typeof value === 'string') {
-    const preview = value.length > 80 ? `${value.slice(0, 77)}…` : value;
-    return value.length ? `String · ${preview}` : 'Empty string';
-  }
+  if (typeof value === 'string') return value.length ? `String · ${value}` : 'Empty string';
   return `${typeof value} · ${String(value)}`;
 }
 
-function createNode({ id, parentId, key, depth, value, pathSegments }) {
-  const type = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
-  const pathLabel = id === 0 ? 'root' : pathSegments.join(' › ');
-  const searchKey = key === null ? 'root' : String(key);
-
-  return {
-    id,
-    parentId,
-    key,
-    depth,
-    type,
-    pathSegments,
-    pathLabel,
-    summary: describeValue(value),
-    searchText: `${pathLabel} ${searchKey} ${type} ${describeValue(value)}`.toLowerCase(),
-    childIds: [],
-    composite: isComposite(value),
-  };
+function getEntries(value) {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => [String(index), item]);
+  }
+  if (isComposite(value)) {
+    return Object.entries(value);
+  }
+  return [];
 }
 
-function buildIndex(root) {
-  const nodes = [];
-  const byId = new Map();
-  const expanded = new Set([0]);
-  let idCounter = 0;
-
-  const rootNode = createNode({
-    id: idCounter++,
-    parentId: null,
-    key: null,
-    depth: 0,
-    value: root,
-    pathSegments: [],
-  });
-
-  nodes.push(rootNode);
-  byId.set(rootNode.id, rootNode);
-
-  const stack = [{ value: root, node: rootNode }];
-
-  while (stack.length) {
-    const current = stack.pop();
-    if (!current.node.composite) continue;
-
-    const entries = Array.isArray(current.value)
-      ? current.value.map((item, index) => [index, item])
-      : Object.entries(current.value);
-
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
-      const [entryKey, entryValue] = entries[index];
-      const childNode = createNode({
-        id: idCounter++,
-        parentId: current.node.id,
-        key: entryKey,
-        depth: current.node.depth + 1,
-        value: entryValue,
-        pathSegments: current.node.pathSegments.concat(String(entryKey)),
-      });
-
-      current.node.childIds.unshift(childNode.id);
-      nodes.push(childNode);
-      byId.set(childNode.id, childNode);
-      stack.push({ value: entryValue, node: childNode });
-    }
-  }
-
-  state.index = {
-    nodes,
-    byId,
-    visibleIds: [],
-    expanded,
-    selectedElement: null,
-  };
+function getValueAtPath(root, path) {
+  if (!path) return root;
+  return path.split('.').reduce((current, segment) => current?.[segment], root);
 }
 
-function getNodeValue(root, node) {
-  let current = root;
-  for (let index = 0; index < node.pathSegments.length; index += 1) {
-    current = current?.[node.pathSegments[index]];
-  }
-  return current;
+function setValueAtPath(root, path, nextValue) {
+  const parts = path.split('.');
+  const leaf = parts.pop();
+  const parent = parts.reduce((current, segment) => current[segment], root);
+  parent[leaf] = nextValue;
 }
 
-function setNodeValue(root, node, nextValue) {
-  if (node.id === 0) return;
-  let current = root;
-  for (let index = 0; index < node.pathSegments.length - 1; index += 1) {
-    current = current[node.pathSegments[index]];
-  }
-  current[node.pathSegments.at(-1)] = nextValue;
-}
-
-function updateDirtyPath(node) {
-  if (!node || node.id === 0) return;
-  const currentValue = getNodeValue(state.data, node);
-  const originalValue = getNodeValue(state.originalData, node);
-  const key = node.pathSegments.join('\u0001');
-
-  if (Object.is(currentValue, originalValue) || JSON.stringify(currentValue) === JSON.stringify(originalValue)) {
-    state.dirtyPaths.delete(key);
-  } else {
-    state.dirtyPaths.add(key);
-  }
-}
-
-function updateNodeMetadata(node) {
-  const value = getNodeValue(state.data, node);
-  node.summary = describeValue(value);
-  node.searchText = `${node.pathLabel} ${node.key ?? 'root'} ${node.type} ${node.summary}`.toLowerCase();
-}
-
-function expandAncestors(nodeId) {
-  let current = state.index.byId.get(nodeId);
-  while (current?.parentId !== null) {
-    state.index.expanded.add(current.parentId);
-    current = state.index.byId.get(current.parentId);
-  }
-}
-
-function computeVisibleIds() {
-  const { byId, expanded } = state.index;
-  const visibleIds = [];
-  const filter = state.filter;
-  const matches = filter
-    ? new Set(state.index.nodes.filter((node) => node.searchText.includes(filter)).map((node) => node.id))
-    : null;
-  const included = filter ? new Set() : null;
-
-  if (filter) {
-    for (const id of matches) {
-      let current = byId.get(id);
-      while (current) {
-        included.add(current.id);
-        current = current.parentId === null ? null : byId.get(current.parentId);
-      }
-    }
-  }
-
-  const stack = [0];
-  while (stack.length) {
-    const id = stack.pop();
-    const node = byId.get(id);
-    if (!node) continue;
-    if (included && !included.has(id)) continue;
-    visibleIds.push(id);
-
-    if (node.composite && (filter || expanded.has(id))) {
-      for (let index = node.childIds.length - 1; index >= 0; index -= 1) {
-        stack.push(node.childIds[index]);
-      }
-    }
-  }
-
-  state.index.visibleIds = visibleIds;
+function matchesFilter(path, key, value) {
+  if (!state.filter) return true;
+  const haystack = `${path} ${key} ${describeValue(value)}`.toLowerCase();
+  return haystack.includes(state.filter);
 }
 
 function renderTree() {
-  refs.treeView.textContent = '';
+  refs.treeView.innerHTML = '';
 
   if (state.data === null) {
     refs.emptyState.classList.remove('hidden');
@@ -225,143 +79,109 @@ function renderTree() {
   }
 
   refs.emptyState.classList.add('hidden');
-  computeVisibleIds();
-
   const fragment = document.createDocumentFragment();
-
-  for (const id of state.index.visibleIds) {
-    const node = state.index.byId.get(id);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'tree-node';
-    button.dataset.nodeId = String(node.id);
-    button.style.setProperty('--depth', node.depth);
-    if (state.selectedId === node.id) {
-      button.classList.add('active');
-      state.index.selectedElement = button;
-    }
-
-    const heading = document.createElement('span');
-    heading.className = 'tree-node-heading';
-
-    const caret = document.createElement('span');
-    caret.className = 'tree-caret';
-    caret.textContent = node.composite ? (state.filter || state.index.expanded.has(node.id) ? '▾' : '▸') : '•';
-    heading.appendChild(caret);
-
-    const path = document.createElement('span');
-    path.className = 'tree-node-path';
-    path.textContent = node.pathLabel;
-    heading.appendChild(path);
-
-    const summary = document.createElement('span');
-    summary.className = 'tree-node-summary';
-    summary.textContent = node.summary;
-
-    button.append(heading, summary);
-    fragment.appendChild(button);
-  }
-
+  fragment.appendChild(buildTreeGroup(state.data, 'root'));
   refs.treeView.appendChild(fragment);
 }
 
-function updateRenderedNode(node) {
-  const button = refs.treeView.querySelector(`[data-node-id="${CSS.escape(String(node.id))}"]`);
-  if (!button) return false;
+function buildTreeGroup(value, path) {
+  const container = document.createElement('div');
+  container.className = 'tree-group';
 
-  const summary = button.querySelector('.tree-node-summary');
-  if (summary) summary.textContent = node.summary;
+  const node = refs.nodeTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.path = path;
+  node.classList.toggle('active', path === state.selectedPath);
+  node.querySelector('.tree-node-path').textContent = path;
+  node.querySelector('.tree-node-summary').textContent = describeValue(value);
+  node.hidden = !matchesFilter(path, path.split('.').at(-1), value);
+  node.addEventListener('click', () => {
+    state.selectedPath = path;
+    render();
+  });
+  container.appendChild(node);
 
-  const path = button.querySelector('.tree-node-path');
-  if (path) path.textContent = node.pathLabel;
+  for (const [key, child] of getEntries(value)) {
+    const childPath = path === 'root' ? key : `${path}.${key}`;
+    const childNode = isComposite(child) ? buildTreeGroup(child, childPath) : buildTreeLeaf(child, childPath, key);
+    if (!childNode.hidden) {
+      container.appendChild(childNode);
+    }
+  }
 
-  return true;
+  const visibleChildren = [...container.children].some((child) => !child.hidden);
+  container.hidden = !visibleChildren;
+  return container;
 }
 
-function setSelectedNode(nodeId) {
-  if (state.selectedId === nodeId) return;
-
-  if (state.index.selectedElement) {
-    state.index.selectedElement.classList.remove('active');
-  }
-
-  state.selectedId = nodeId;
-  const nextSelectedElement = refs.treeView.querySelector(`[data-node-id="${CSS.escape(String(nodeId))}"]`);
-  if (nextSelectedElement) {
-    nextSelectedElement.classList.add('active');
-    state.index.selectedElement = nextSelectedElement;
-  } else {
-    state.index.selectedElement = null;
-  }
-
-  renderEditor();
+function buildTreeLeaf(value, path, key) {
+  const node = refs.nodeTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.path = path;
+  node.classList.toggle('active', path === state.selectedPath);
+  node.querySelector('.tree-node-path').textContent = path;
+  node.querySelector('.tree-node-summary').textContent = describeValue(value);
+  node.hidden = !matchesFilter(path, key, value);
+  node.addEventListener('click', () => {
+    state.selectedPath = path;
+    render();
+  });
+  return node;
 }
 
 function renderEditor() {
-  if (state.data === null || state.selectedId === null) {
+  if (state.data === null || !state.selectedPath) {
     refs.editorEmpty.classList.remove('hidden');
     refs.editorForm.classList.add('hidden');
     refs.selectionPath.textContent = 'No field selected';
-    refs.resetButton.disabled = true;
     return;
   }
 
   refs.editorEmpty.classList.add('hidden');
   refs.editorForm.classList.remove('hidden');
 
-  const node = state.index.byId.get(state.selectedId);
-  const value = getNodeValue(state.data, node);
-  const originalValue = getNodeValue(state.originalData, node);
+  const value = getValueAtPath(state.data, state.selectedPath);
+  const originalValue = getValueAtPath(state.originalData, state.selectedPath);
+  const key = state.selectedPath.split('.').at(-1);
+  const type = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
 
-  refs.selectionPath.textContent = node.pathLabel;
-  refs.valueType.value = node.type;
-  refs.valueKey.value = node.id === 0 ? 'root' : String(node.key);
+  refs.selectionPath.textContent = state.selectedPath;
+  refs.valueType.value = type;
+  refs.valueKey.value = key;
 
-  hiddenGroups.forEach((element) => element.classList.add('hidden'));
+  [refs.textValueGroup, refs.numberValueGroup, refs.booleanValueGroup, refs.nullValueGroup, refs.compositeValueGroup]
+    .forEach((element) => element.classList.add('hidden'));
 
-  if (node.type === 'string') {
+  if (type === 'string') {
     refs.textValueGroup.classList.remove('hidden');
     refs.textValue.value = value;
-  } else if (node.type === 'number') {
+  } else if (type === 'number') {
     refs.numberValueGroup.classList.remove('hidden');
     refs.numberValue.value = value;
-  } else if (node.type === 'boolean') {
+  } else if (type === 'boolean') {
     refs.booleanValueGroup.classList.remove('hidden');
     refs.booleanValue.value = String(value);
-  } else if (node.type === 'null') {
+  } else if (type === 'null') {
     refs.nullValueGroup.classList.remove('hidden');
   } else {
     refs.compositeValueGroup.classList.remove('hidden');
     refs.compositeValue.value = JSON.stringify(value, null, 2);
   }
 
-  refs.resetButton.disabled = node.id === 0 || JSON.stringify(value) === JSON.stringify(originalValue);
+  const changed = JSON.stringify(value) !== JSON.stringify(originalValue);
+  refs.resetButton.disabled = !changed || state.selectedPath === 'root';
 }
 
 function renderDirtyState() {
-  const dirty = state.dirtyPaths.size > 0;
-  refs.dirtyIndicator.textContent = dirty ? `Unsaved changes (${state.dirtyPaths.size})` : 'Saved';
+  const dirty = JSON.stringify(state.data) !== JSON.stringify(state.originalData);
+  refs.dirtyIndicator.textContent = dirty ? 'Unsaved changes' : 'Saved';
   refs.dirtyIndicator.style.background = dirty ? '#fff4db' : '#eaf7ef';
   refs.dirtyIndicator.style.color = dirty ? '#8a5a00' : '#0f9d58';
   refs.downloadButton.disabled = state.data === null;
 }
 
-function renderAll() {
+function render() {
   renderTree();
   renderEditor();
   renderDirtyState();
-}
-
-function loadJsonData(parsed, sourceName) {
-  state.sourceName = sourceName;
-  state.originalData = parsed;
-  state.data = clone(parsed);
-  state.filter = '';
-  state.dirtyPaths.clear();
-  refs.searchInput.value = '';
-  buildIndex(state.data);
-  state.selectedId = 0;
-  renderAll();
 }
 
 refs.fileInput.addEventListener('change', async (event) => {
@@ -369,8 +189,12 @@ refs.fileInput.addEventListener('change', async (event) => {
   if (!file) return;
 
   try {
-    const parsed = JSON.parse(await file.text());
-    loadJsonData(parsed, file.name);
+    const text = await file.text();
+    state.sourceName = file.name;
+    state.originalData = JSON.parse(text);
+    state.data = clone(state.originalData);
+    state.selectedPath = 'root';
+    render();
   } catch (error) {
     alert(`Could not parse JSON: ${error.message}`);
   }
@@ -378,81 +202,35 @@ refs.fileInput.addEventListener('change', async (event) => {
 
 refs.searchInput.addEventListener('input', (event) => {
   state.filter = event.target.value.trim().toLowerCase();
-  if (state.selectedId !== null) {
-    expandAncestors(state.selectedId);
-  }
   renderTree();
-});
-
-refs.treeView.addEventListener('click', (event) => {
-  const button = event.target.closest('.tree-node');
-  if (!button) return;
-
-  const nodeId = Number(button.dataset.nodeId);
-  const node = state.index.byId.get(nodeId);
-  if (!node) return;
-
-  if (node.composite && !state.filter) {
-    state.index.expanded.has(nodeId)
-      ? state.index.expanded.delete(nodeId)
-      : state.index.expanded.add(nodeId);
-    renderTree();
-  }
-
-  setSelectedNode(nodeId);
 });
 
 refs.editorForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  if (state.selectedId === null) return;
+  if (!state.selectedPath || state.selectedPath === 'root') return;
 
-  const node = state.index.byId.get(state.selectedId);
-  if (!node || node.id === 0) return;
-
-  const currentValue = getNodeValue(state.data, node);
+  const currentValue = getValueAtPath(state.data, state.selectedPath);
   let nextValue = currentValue;
 
-  if (node.type === 'string') {
+  if (typeof currentValue === 'string') {
     nextValue = refs.textValue.value;
-  } else if (node.type === 'number') {
+  } else if (typeof currentValue === 'number') {
     nextValue = Number(refs.numberValue.value);
-  } else if (node.type === 'boolean') {
+  } else if (typeof currentValue === 'boolean') {
     nextValue = refs.booleanValue.value === 'true';
   } else {
     return;
   }
 
-  setNodeValue(state.data, node, nextValue);
-  updateDirtyPath(node);
-  updateNodeMetadata(node);
-
-  if (state.filter || !updateRenderedNode(node)) {
-    renderTree();
-    setSelectedNode(node.id);
-  } else {
-    renderEditor();
-  }
-
-  renderDirtyState();
+  setValueAtPath(state.data, state.selectedPath, nextValue);
+  render();
 });
 
 refs.resetButton.addEventListener('click', () => {
-  if (state.selectedId === null) return;
-  const node = state.index.byId.get(state.selectedId);
-  if (!node || node.id === 0) return;
-
-  setNodeValue(state.data, node, clone(getNodeValue(state.originalData, node)));
-  updateDirtyPath(node);
-  updateNodeMetadata(node);
-
-  if (state.filter || !updateRenderedNode(node)) {
-    renderTree();
-    setSelectedNode(node.id);
-  } else {
-    renderEditor();
-  }
-
-  renderDirtyState();
+  if (!state.selectedPath || state.selectedPath === 'root') return;
+  const originalValue = clone(getValueAtPath(state.originalData, state.selectedPath));
+  setValueAtPath(state.data, state.selectedPath, originalValue);
+  render();
 });
 
 refs.downloadButton.addEventListener('click', () => {
@@ -462,9 +240,9 @@ refs.downloadButton.addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `${state.sourceName.replace(/\.json$/i, '') || 'data'}-edited.json`;
+  anchor.download = state.sourceName.replace(/\.json$/i, '') + '-edited.json';
   anchor.click();
   URL.revokeObjectURL(url);
 });
 
-renderAll();
+render();

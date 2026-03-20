@@ -108,27 +108,23 @@ textarea { resize: vertical; }
   overflow: auto;
   padding-right: 0.2rem;
 }
+.tree-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid #edf1fb;
+}
 .tree-node {
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
   background: #fbfcff;
   border-radius: 1rem;
-  padding: 0.8rem 1rem;
-  padding-left: calc(1rem + (var(--depth, 0) * 0.9rem));
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-.tree-node-heading {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.tree-caret {
-  color: var(--accent);
-  flex: 0 0 auto;
-  font-weight: 700;
 }
 .tree-node.active {
   border-color: var(--accent);
