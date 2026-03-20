@@ -14,6 +14,7 @@ const state = {
   treeIndex: [],
   pathLookup: new Map(),
   changedPaths: new Set(),
+  collapsedPaths: new Set(),
   searchFrame: 0,
   searchDebounceTimer: 0,
   pendingFilter: '',
@@ -24,6 +25,8 @@ const state = {
 const refs = {
   fileInput: document.querySelector('#file-input'),
   downloadButton: document.querySelector('#download-button'),
+  expandAllButton: document.querySelector('#expand-all-button'),
+  collapseAllButton: document.querySelector('#collapse-all-button'),
   searchInput: document.querySelector('#search-input'),
   treeView: document.querySelector('#tree-view'),
   emptyState: document.querySelector('#empty-state'),
@@ -95,7 +98,9 @@ function createTreeIndex(root) {
       isComposite: isComposite(value),
       summary,
       searchText: `${path} ${key} ${summary}`.toLowerCase(),
+      wrap: null,
       element: null,
+      toggle: null,
       pathLabel: null,
       summaryLabel: null,
       visible: true,
@@ -151,23 +156,31 @@ function buildTreeDom() {
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    const node = templateRoot.cloneNode(true);
-    const pathLabel = node.querySelector('.tree-node-path');
-    const summaryLabel = node.querySelector('.tree-node-summary');
+    const wrap = templateRoot.cloneNode(true);
+    const toggle = wrap.querySelector('.tree-toggle');
+    const node = wrap.querySelector('.tree-node');
+    const pathLabel = wrap.querySelector('.tree-node-path');
+    const summaryLabel = wrap.querySelector('.tree-node-summary');
 
-    node.dataset.index = String(index);
-    node.style.setProperty('--tree-indent', `${entry.depth * INDENT_REM}rem`);
+    wrap.dataset.index = String(index);
+    wrap.style.setProperty('--tree-indent', `${entry.depth * INDENT_REM}rem`);
     if (entry.isComposite) node.classList.add(COMPOSITE_CLASS);
 
     pathLabel.textContent = entry.path;
     summaryLabel.textContent = entry.summary;
 
+    if (entry.isComposite) {
+      toggle.classList.remove(HIDDEN_CLASS);
+    }
+
+    entry.wrap = wrap;
     entry.element = node;
+    entry.toggle = toggle;
     entry.pathLabel = pathLabel;
     entry.summaryLabel = summaryLabel;
     entry.visible = true;
 
-    fragment.appendChild(node);
+    fragment.appendChild(wrap);
   }
 
   refs.treeView.appendChild(fragment);
@@ -201,6 +214,20 @@ function revealDescendants(startIndex, entries, visible) {
   }
 }
 
+function applyCollapsedState() {
+  const hasFilter = Boolean(state.filter);
+
+  for (let index = 0; index < state.treeIndex.length; index += 1) {
+    const entry = state.treeIndex[index];
+    if (entry.toggle) {
+      const collapsed = state.collapsedPaths.has(entry.path);
+      entry.toggle.setAttribute('aria-expanded', String(!collapsed));
+      entry.wrap.classList.toggle('collapsed', collapsed);
+      entry.toggle.disabled = hasFilter;
+    }
+  }
+}
+
 function applyTreeFilter() {
   if (!state.treeBuilt) return;
 
@@ -211,6 +238,16 @@ function applyTreeFilter() {
 
   if (!filter) {
     visible.fill(1);
+    for (let index = 0; index < length; index += 1) {
+      let currentIndex = entries[index].parentIndex;
+      while (currentIndex !== -1) {
+        if (state.collapsedPaths.has(entries[currentIndex].path)) {
+          visible[index] = 0;
+          break;
+        }
+        currentIndex = entries[currentIndex].parentIndex;
+      }
+    }
   } else {
     visible[0] = 1;
     for (let index = 0; index < length; index += 1) {
@@ -234,12 +271,13 @@ function applyTreeFilter() {
     if (nextVisible) visibleCount += 1;
     if (entry.visible !== nextVisible) {
       entry.visible = nextVisible;
-      entry.element.classList.toggle(HIDDEN_CLASS, !nextVisible);
+      entry.wrap.classList.toggle(HIDDEN_CLASS, !nextVisible);
     }
   }
 
   state.visibleCount = visibleCount;
   refs.searchEmpty.classList.toggle(HIDDEN_CLASS, !(filter && visibleCount <= 1));
+  applyCollapsedState();
 }
 
 function updateActiveNode() {
@@ -315,9 +353,10 @@ function renderTreeStats() {
     return;
   }
 
-  refs.treeStats.textContent = `${state.treeIndex.length} nodes indexed`;
+  const collapsedCount = state.collapsedPaths.size;
+  refs.treeStats.textContent = `${state.treeIndex.length} nodes indexed${collapsedCount ? ` · ${collapsedCount} collapsed` : ''}`;
   if (!state.filter) {
-    refs.searchStatus.textContent = 'Showing all nodes';
+    refs.searchStatus.textContent = state.collapsedPaths.size ? `Showing ${state.visibleCount} visible nodes` : 'Showing all nodes';
   } else if (state.visibleCount <= 1) {
     refs.searchStatus.textContent = `No matches for “${state.filter}”`;
   } else {
@@ -331,6 +370,8 @@ function renderDirtyState() {
   refs.dirtyIndicator.style.background = dirty ? '#fff4db' : '#eaf7ef';
   refs.dirtyIndicator.style.color = dirty ? '#8a5a00' : '#0f9d58';
   refs.downloadButton.disabled = state.data === null;
+  refs.expandAllButton.disabled = state.data === null || state.filter.length > 0;
+  refs.collapseAllButton.disabled = state.data === null || state.filter.length > 0;
 }
 
 function render() {
@@ -349,14 +390,34 @@ function scheduleTreeRender() {
     state.searchFrame = 0;
     renderTree();
     renderTreeStats();
+    renderDirtyState();
   });
 }
 
 refs.treeView.addEventListener('click', (event) => {
+  const toggle = event.target.closest('.tree-toggle');
+  if (toggle) {
+    const wrap = toggle.closest('.tree-node-wrap');
+    const entry = state.treeIndex[Number(wrap?.dataset.index)];
+    if (!entry || !entry.isComposite || state.filter) return;
+
+    if (state.collapsedPaths.has(entry.path)) {
+      state.collapsedPaths.delete(entry.path);
+    } else {
+      state.collapsedPaths.add(entry.path);
+    }
+
+    renderTree();
+    renderTreeStats();
+    renderDirtyState();
+    return;
+  }
+
   const node = event.target.closest('.tree-node');
   if (!node) return;
 
-  const entry = state.treeIndex[Number(node.dataset.index)];
+  const wrap = node.closest('.tree-node-wrap');
+  const entry = state.treeIndex[Number(wrap?.dataset.index)];
   if (!entry || state.selectedPath === entry.path) return;
 
   state.selectedPath = entry.path;
@@ -374,6 +435,7 @@ refs.fileInput.addEventListener('change', async (event) => {
     state.data = clone(state.originalData);
     state.selectedPath = ROOT_PATH;
     state.selectedEntry = null;
+    state.collapsedPaths.clear();
     if (state.searchDebounceTimer) {
       clearTimeout(state.searchDebounceTimer);
       state.searchDebounceTimer = 0;
@@ -409,6 +471,24 @@ function queueTreeFilter(value) {
 
 refs.searchInput.addEventListener('input', (event) => {
   queueTreeFilter(event.target.value);
+});
+
+refs.expandAllButton.addEventListener('click', () => {
+  state.collapsedPaths.clear();
+  renderTree();
+  renderTreeStats();
+  renderDirtyState();
+});
+
+refs.collapseAllButton.addEventListener('click', () => {
+  state.collapsedPaths = new Set(
+    state.treeIndex
+      .filter((entry) => entry.isComposite && entry.path !== ROOT_PATH)
+      .map((entry) => entry.path),
+  );
+  renderTree();
+  renderTreeStats();
+  renderDirtyState();
 });
 
 refs.editorForm.addEventListener('submit', (event) => {
