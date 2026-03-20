@@ -15,6 +15,8 @@ const state = {
   pathLookup: new Map(),
   changedPaths: new Set(),
   searchFrame: 0,
+  searchDebounceTimer: 0,
+  pendingFilter: '',
   treeBuilt: false,
 };
 
@@ -329,7 +331,12 @@ refs.fileInput.addEventListener('change', async (event) => {
     state.data = clone(state.originalData);
     state.selectedPath = ROOT_PATH;
     state.selectedEntry = null;
-    state.filter = refs.searchInput.value.trim().toLowerCase();
+    if (state.searchDebounceTimer) {
+      clearTimeout(state.searchDebounceTimer);
+      state.searchDebounceTimer = 0;
+    }
+    state.pendingFilter = refs.searchInput.value.trim().toLowerCase();
+    state.filter = state.pendingFilter;
     state.changedPaths.clear();
 
     const { entries, pathLookup } = createTreeIndex(state.data);
@@ -343,9 +350,22 @@ refs.fileInput.addEventListener('change', async (event) => {
   }
 });
 
+function queueTreeFilter(value) {
+  state.pendingFilter = value.trim().toLowerCase();
+
+  if (state.searchDebounceTimer) {
+    clearTimeout(state.searchDebounceTimer);
+  }
+
+  state.searchDebounceTimer = window.setTimeout(() => {
+    state.searchDebounceTimer = 0;
+    state.filter = state.pendingFilter;
+    scheduleTreeRender();
+  }, 3000);
+}
+
 refs.searchInput.addEventListener('input', (event) => {
-  state.filter = event.target.value.trim().toLowerCase();
-  scheduleTreeRender();
+  queueTreeFilter(event.target.value);
 });
 
 refs.editorForm.addEventListener('submit', (event) => {
