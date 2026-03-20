@@ -18,6 +18,7 @@ const state = {
   searchDebounceTimer: 0,
   pendingFilter: '',
   treeBuilt: false,
+  visibleCount: 0,
 };
 
 const refs = {
@@ -26,6 +27,9 @@ const refs = {
   searchInput: document.querySelector('#search-input'),
   treeView: document.querySelector('#tree-view'),
   emptyState: document.querySelector('#empty-state'),
+  searchEmpty: document.querySelector('#search-empty'),
+  treeStats: document.querySelector('#tree-stats'),
+  searchStatus: document.querySelector('#search-status'),
   selectionPath: document.querySelector('#selection-path'),
   dirtyIndicator: document.querySelector('#dirty-indicator'),
   editorEmpty: document.querySelector('#editor-empty'),
@@ -189,6 +193,14 @@ function refreshAncestorMetadata(entry) {
   }
 }
 
+function revealDescendants(startIndex, entries, visible) {
+  const startDepth = entries[startIndex].depth;
+  for (let index = startIndex + 1; index < entries.length; index += 1) {
+    if (entries[index].depth <= startDepth) break;
+    visible[index] = 1;
+  }
+}
+
 function applyTreeFilter() {
   if (!state.treeBuilt) return;
 
@@ -200,9 +212,14 @@ function applyTreeFilter() {
   if (!filter) {
     visible.fill(1);
   } else {
+    visible[0] = 1;
     for (let index = 0; index < length; index += 1) {
       if (!entries[index].searchText.includes(filter)) continue;
-      let currentIndex = index;
+      visible[index] = 1;
+      if (entries[index].isComposite) {
+        revealDescendants(index, entries, visible);
+      }
+      let currentIndex = entries[index].parentIndex;
       while (currentIndex !== -1 && visible[currentIndex] === 0) {
         visible[currentIndex] = 1;
         currentIndex = entries[currentIndex].parentIndex;
@@ -210,13 +227,19 @@ function applyTreeFilter() {
     }
   }
 
+  let visibleCount = 0;
   for (let index = 0; index < length; index += 1) {
     const entry = entries[index];
     const nextVisible = visible[index] === 1;
-    if (entry.visible === nextVisible) continue;
-    entry.visible = nextVisible;
-    entry.element.classList.toggle(HIDDEN_CLASS, !nextVisible);
+    if (nextVisible) visibleCount += 1;
+    if (entry.visible !== nextVisible) {
+      entry.visible = nextVisible;
+      entry.element.classList.toggle(HIDDEN_CLASS, !nextVisible);
+    }
   }
+
+  state.visibleCount = visibleCount;
+  refs.searchEmpty.classList.toggle(HIDDEN_CLASS, !(filter && visibleCount <= 1));
 }
 
 function updateActiveNode() {
@@ -284,6 +307,24 @@ function renderEditor() {
   refs.resetButton.disabled = !changed || entry.path === ROOT_PATH;
 }
 
+function renderTreeStats() {
+  if (state.data === null) {
+    refs.treeStats.textContent = 'No file loaded';
+    refs.searchStatus.textContent = 'Showing all nodes';
+    refs.searchEmpty.classList.add(HIDDEN_CLASS);
+    return;
+  }
+
+  refs.treeStats.textContent = `${state.treeIndex.length} nodes indexed`;
+  if (!state.filter) {
+    refs.searchStatus.textContent = 'Showing all nodes';
+  } else if (state.visibleCount <= 1) {
+    refs.searchStatus.textContent = `No matches for “${state.filter}”`;
+  } else {
+    refs.searchStatus.textContent = `Filtered to ${state.visibleCount} visible nodes`;
+  }
+}
+
 function renderDirtyState() {
   const dirty = state.changedPaths.size > 0;
   refs.dirtyIndicator.textContent = dirty ? 'Unsaved changes' : 'Saved';
@@ -295,6 +336,7 @@ function renderDirtyState() {
 function render() {
   renderTree();
   renderEditor();
+  renderTreeStats();
   renderDirtyState();
 }
 
@@ -306,6 +348,7 @@ function scheduleTreeRender() {
   state.searchFrame = requestAnimationFrame(() => {
     state.searchFrame = 0;
     renderTree();
+    renderTreeStats();
   });
 }
 
@@ -361,7 +404,7 @@ function queueTreeFilter(value) {
     state.searchDebounceTimer = 0;
     state.filter = state.pendingFilter;
     scheduleTreeRender();
-  }, 3000);
+  }, 120);
 }
 
 refs.searchInput.addEventListener('input', (event) => {
