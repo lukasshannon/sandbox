@@ -6,6 +6,7 @@ A static, mobile-first web app for GitHub Pages that loads a local JSON file, re
 
 - Open local `.json` files without any backend.
 - Browse nested arrays and objects with a searchable structure panel.
+- Collapse or expand nested branches to stay oriented on mobile screens and large payloads.
 - Inspect path, key, and type details for the selected node.
 - Edit string, number, and boolean values, then download the updated JSON.
 - Responsive layout optimized for phones first and enhanced for larger screens.

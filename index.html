@@ -43,6 +43,10 @@
               <input id="search-input" type="search" placeholder="Search keys, paths, values" />
             </label>
           </div>
+          <div class="panel-toolbar" aria-label="Tree controls">
+            <button id="expand-all-button" class="button button-secondary button-small" type="button" disabled>Expand all</button>
+            <button id="collapse-all-button" class="button button-secondary button-small" type="button" disabled>Collapse nested</button>
+          </div>
           <div class="panel-status-row">
             <p id="tree-stats" class="panel-status">No file loaded</p>
             <p id="search-status" class="panel-status">Showing all nodes</p>
@@ -116,10 +120,15 @@
     </div>
 
     <template id="tree-node-template">
-      <button class="tree-node" type="button">
-        <span class="tree-node-path"></span>
-        <span class="tree-node-summary"></span>
-      </button>
+      <div class="tree-node-wrap">
+        <button class="tree-toggle hidden" type="button" aria-label="Toggle children" aria-expanded="true">
+          <span class="tree-toggle-icon" aria-hidden="true">▾</span>
+        </button>
+        <button class="tree-node" type="button">
+          <span class="tree-node-path"></span>
+          <span class="tree-node-summary"></span>
+        </button>
+      </div>
     </template>
 
     <script src="app.js"></script>
