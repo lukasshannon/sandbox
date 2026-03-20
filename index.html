@@ -9,25 +9,46 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Static GitHub Pages app</p>
+        <div class="hero-copy">
+          <p class="eyebrow">Static JSON workspace</p>
           <h1>JSON Navigator</h1>
-          <p class="subtitle">Load a JSON file, browse its structure, and edit values on any screen size.</p>
+          <p class="subtitle">Inspect nested data, find fields fast, and make focused edits without bouncing between a raw file and a text editor.</p>
+          <div class="hero-meta">
+            <span class="meta-chip">Responsive tree explorer</span>
+            <span class="meta-chip">Inline value editor</span>
+            <span class="meta-chip">Local-only file workflow</span>
+          </div>
         </div>
-        <div class="header-actions">
-          <label class="button button-primary file-button" for="file-input">Open JSON</label>
-          <input id="file-input" type="file" accept="application/json,.json" />
-          <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+
+        <div class="hero-card">
+          <p class="hero-card-label">Quick start</p>
+          <p class="hero-card-text">Open any JSON file to populate the tree. Search keeps matching branches visible so you never lose context.</p>
+          <div class="header-actions">
+            <label class="button button-primary file-button" for="file-input">Open JSON</label>
+            <input id="file-input" type="file" accept="application/json,.json" />
+            <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+          </div>
         </div>
       </header>
 
       <main class="layout">
         <aside class="panel navigation-panel">
-          <div class="panel-header">
-            <h2>Structure</h2>
-            <input id="search-input" type="search" placeholder="Fast filter: keys, paths, values" aria-label="Filter JSON keys" />
+          <div class="panel-header panel-header-stack">
+            <div>
+              <h2>Structure</h2>
+              <p class="panel-copy">Browse paths, inspect summaries, and filter by key, full path, or visible value preview.</p>
+            </div>
+            <label class="search-shell" aria-label="Filter JSON keys">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="search-input" type="search" placeholder="Search keys, paths, values" />
+            </label>
+          </div>
+          <div class="panel-status-row">
+            <p id="tree-stats" class="panel-status">No file loaded</p>
+            <p id="search-status" class="panel-status">Showing all nodes</p>
           </div>
           <p id="empty-state" class="empty-state">Choose a JSON file to start exploring.</p>
+          <p id="search-empty" class="empty-state hidden">No matching nodes. Try a broader term.</p>
           <nav id="tree-view" class="tree-view" aria-label="JSON navigation"></nav>
         </aside>
 
