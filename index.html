@@ -32,7 +32,12 @@
       </header>
 
       <main class="layout">
-        <aside class="panel navigation-panel">
+        <div class="mobile-panel-switcher" role="tablist" aria-label="Panel navigation">
+          <button id="show-structure-button" class="button button-secondary button-small mobile-panel-button is-selected" type="button" role="tab" aria-selected="true" aria-controls="navigation-panel">Structure</button>
+          <button id="show-editor-button" class="button button-secondary button-small mobile-panel-button" type="button" role="tab" aria-selected="false" aria-controls="detail-panel">Editor</button>
+        </div>
+
+        <aside id="navigation-panel" class="panel navigation-panel">
           <div class="panel-header panel-header-stack">
             <div>
               <h2>Structure</h2>
@@ -56,7 +61,7 @@
           <nav id="tree-view" class="tree-view" aria-label="JSON navigation"></nav>
         </aside>
 
-        <section class="panel detail-panel">
+        <section id="detail-panel" class="panel detail-panel">
           <div class="panel-header sticky">
             <div>
               <h2>Editor</h2>
