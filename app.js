@@ -152,7 +152,7 @@ function buildTreeDom() {
     const summaryLabel = node.querySelector('.tree-node-summary');
 
     node.dataset.index = String(index);
-    node.style.marginLeft = `${entry.depth * INDENT_REM}rem`;
+    node.style.setProperty('--tree-indent', `${entry.depth * INDENT_REM}rem`);
     if (entry.isComposite) node.classList.add(COMPOSITE_CLASS);
 
     pathLabel.textContent = entry.path;
