@@ -20,6 +20,7 @@ const state = {
   pendingFilter: '',
   treeBuilt: false,
   visibleCount: 0,
+  mobilePanel: 'structure',
 };
 
 const refs = {
@@ -50,6 +51,8 @@ const refs = {
   compositeValue: document.querySelector('#composite-value'),
   resetButton: document.querySelector('#reset-button'),
   nodeTemplate: document.querySelector('#tree-node-template'),
+  showStructureButton: document.querySelector('#show-structure-button'),
+  showEditorButton: document.querySelector('#show-editor-button'),
 };
 
 const isComposite = (value) => value !== null && typeof value === 'object';
@@ -302,6 +305,21 @@ function renderTree() {
   updateActiveNode();
 }
 
+
+function isDesktopLayout() {
+  return window.matchMedia('(min-width: 980px)').matches;
+}
+
+function setMobilePanel(panel) {
+  state.mobilePanel = panel;
+  document.body.classList.toggle('mobile-structure-active', panel === 'structure');
+  document.body.classList.toggle('mobile-editor-active', panel === 'editor');
+  refs.showStructureButton?.classList.toggle('is-selected', panel === 'structure');
+  refs.showEditorButton?.classList.toggle('is-selected', panel === 'editor');
+  refs.showStructureButton?.setAttribute('aria-selected', String(panel === 'structure'));
+  refs.showEditorButton?.setAttribute('aria-selected', String(panel === 'editor'));
+}
+
 function setEditorGroups(type) {
   refs.textValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'string');
   refs.numberValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'number');
@@ -421,6 +439,9 @@ refs.treeView.addEventListener('click', (event) => {
   if (!entry || state.selectedPath === entry.path) return;
 
   state.selectedPath = entry.path;
+  if (!isDesktopLayout()) {
+    setMobilePanel('editor');
+  }
   render();
 });
 
@@ -448,6 +469,7 @@ refs.fileInput.addEventListener('change', async (event) => {
     state.treeIndex = entries;
     state.pathLookup = pathLookup;
     state.treeBuilt = false;
+    setMobilePanel('structure');
 
     render();
   } catch (error) {
@@ -470,7 +492,22 @@ function queueTreeFilter(value) {
 }
 
 refs.searchInput.addEventListener('input', (event) => {
+  if (!isDesktopLayout()) {
+    setMobilePanel('structure');
+  }
   queueTreeFilter(event.target.value);
+});
+
+refs.showStructureButton?.addEventListener('click', () => {
+  setMobilePanel('structure');
+});
+
+refs.showEditorButton?.addEventListener('click', () => {
+  setMobilePanel('editor');
+});
+
+window.addEventListener('resize', () => {
+  setMobilePanel(state.mobilePanel);
 });
 
 refs.expandAllButton.addEventListener('click', () => {
@@ -545,4 +582,5 @@ refs.downloadButton.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+setMobilePanel(state.mobilePanel);
 render();

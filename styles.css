@@ -171,6 +171,31 @@ h1 {
   margin-top: 1rem;
   min-width: 0;
 }
+
+.mobile-panel-switcher {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  position: sticky;
+  top: 0.75rem;
+  z-index: 2;
+}
+
+.mobile-panel-button {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mobile-panel-button.is-selected {
+  background: linear-gradient(135deg, rgba(124, 156, 255, 0.22), rgba(94, 234, 212, 0.16));
+  border-color: rgba(124, 156, 255, 0.4);
+  color: var(--text);
+}
+
+body.mobile-editor-active .navigation-panel,
+body.mobile-structure-active .detail-panel {
+  display: none;
+}
 .navigation-panel, .detail-panel { min-width: 0; }
 .panel { padding: 1rem; }
 .panel-header {
@@ -317,12 +342,20 @@ label span {
 }
 
 @media (min-width: 700px) {
+  .mobile-panel-switcher {
+    top: 1rem;
+  }
   .header-actions { width: auto; }
   .header-actions > *, .editor-actions > * { flex: 0 0 auto; }
   .button-small { flex-basis: auto; }
 }
 
 @media (min-width: 980px) {
+  .mobile-panel-switcher { display: none; }
+  body.mobile-editor-active .navigation-panel,
+  body.mobile-structure-active .detail-panel {
+    display: block;
+  }
   .app-shell { padding: 1.5rem; }
   .layout { grid-template-columns: minmax(320px, 390px) minmax(0, 1fr); }
   .topbar {
