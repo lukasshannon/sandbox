@@ -5,6 +5,8 @@ const ACTIVE_CLASS = 'active';
 const COMPOSITE_CLASS = 'tree-node-composite';
 const MODIFIED_CLASS = 'tree-node-modified';
 const MAX_ACTIVITY_ITEMS = 4;
+const THEME_STORAGE_KEY = 'json-navigator-theme';
+const VALID_THEMES = new Set(['system', 'light', 'dark']);
 
 const state = {
   sourceName: '',
@@ -27,6 +29,7 @@ const state = {
   maxDepth: 0,
   activity: ['No recent activity.'],
   reviewEditedOnly: false,
+  theme: 'system',
 };
 
 const refs = {
@@ -74,10 +77,40 @@ const refs = {
   selectionSummary: document.querySelector('#selection-summary'),
   activityList: document.querySelector('#activity-list'),
   sessionStatus: document.querySelector('#session-status'),
+  themeSelect: document.querySelector('#theme-select'),
 };
 
 const isComposite = (value) => value !== null && typeof value === 'object';
 const clone = (value) => structuredClone(value);
+
+
+function getSystemTheme() {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function resolveTheme(theme = state.theme) {
+  return theme === 'system' ? getSystemTheme() : theme;
+}
+
+function applyTheme(theme = state.theme) {
+  const resolvedTheme = resolveTheme(theme);
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.style.colorScheme = resolvedTheme;
+  if (refs.themeSelect && refs.themeSelect.value !== theme) refs.themeSelect.value = theme;
+}
+
+function setTheme(theme) {
+  if (!VALID_THEMES.has(theme)) return;
+  state.theme = theme;
+  window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  applyTheme();
+}
+
+function initializeTheme() {
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  state.theme = VALID_THEMES.has(storedTheme) ? storedTheme : 'system';
+  applyTheme();
+}
 
 function describeValue(value) {
   if (Array.isArray(value)) return `Array (${value.length} items)`;
@@ -627,6 +660,7 @@ refs.clearSearchButton.addEventListener('click', () => {
 
 refs.showStructureButton.addEventListener('click', () => setMobilePanel('structure'));
 refs.showEditorButton.addEventListener('click', () => setMobilePanel('editor'));
+refs.themeSelect.addEventListener('change', (event) => setTheme(event.target.value));
 
 refs.editedOnlyButton.addEventListener('click', () => {
   if (state.data === null || state.changedPaths.size === 0) return;
@@ -741,6 +775,17 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+const systemThemeMedia = window.matchMedia('(prefers-color-scheme: light)');
+if (typeof systemThemeMedia.addEventListener === 'function') {
+  systemThemeMedia.addEventListener('change', () => {
+    if (state.theme === 'system') applyTheme();
+  });
+} else if (typeof systemThemeMedia.addListener === 'function') {
+  systemThemeMedia.addListener(() => {
+    if (state.theme === 'system') applyTheme();
+  });
+}
+
 window.addEventListener('beforeunload', (event) => {
   if (state.changedPaths.size === 0) return;
   event.preventDefault();
@@ -749,5 +794,6 @@ window.addEventListener('beforeunload', (event) => {
 
 window.addEventListener('resize', () => setMobilePanel(state.mobilePanel));
 
+initializeTheme();
 setMobilePanel(state.mobilePanel);
 render();

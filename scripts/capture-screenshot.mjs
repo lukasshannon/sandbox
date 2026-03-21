@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -10,6 +11,58 @@ const APP_URL = `http://${HOST}:${PORT}`;
 const OUTPUT_DIR = path.resolve('artifacts');
 const OUTPUT_PATH = path.join(OUTPUT_DIR, 'json-navigator-mobile.png');
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
+const installCommand = ['playwright', 'install', 'chromium'];
+const systemBrowserCandidates = [
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+];
+
+async function fileExists(filePath) {
+  if (!filePath) return false;
+
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureChromiumExecutable() {
+  if (await fileExists(executablePath)) return executablePath;
+
+  for (const candidate of systemBrowserCandidates) {
+    if (await fileExists(candidate)) return candidate;
+  }
+
+  const browserExecutable = chromium.executablePath();
+  if (await fileExists(browserExecutable)) return browserExecutable;
+
+  console.log('Chromium is missing. Installing Playwright Chromium...');
+
+  await new Promise((resolve, reject) => {
+    const installer = spawn('npx', installCommand, {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
+
+    installer.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Chromium install failed with exit code ${code ?? 'unknown'}.`));
+    });
+
+    installer.on('error', reject);
+  });
+
+  const installedExecutable = chromium.executablePath();
+  if (await fileExists(installedExecutable)) return installedExecutable;
+
+  throw new Error('Chromium installation completed but no executable was found.');
+}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,9 +95,10 @@ async function main() {
   try {
     await waitForServer(APP_URL);
 
+    const chromiumExecutable = await ensureChromiumExecutable();
     const browser = await chromium.launch({
       headless: true,
-      executablePath: executablePath || undefined,
+      executablePath: chromiumExecutable,
     });
     const page = await browser.newPage({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
 
@@ -86,10 +140,10 @@ async function main() {
 main().catch((error) => {
   const message = String(error?.message || error);
 
-  if (message.includes('Executable doesn\'t exist') || message.includes('browserType.launch')) {
+  if (message.includes('Executable doesn\'t exist') || message.includes('browserType.launch') || message.includes('Chromium install failed')) {
     console.error([
-      'Chromium is not available for Playwright.',
-      'Run `npx playwright install chromium` in an environment that permits browser downloads,',
+      'Chromium could not be prepared automatically for Playwright.',
+      'Make sure `npx playwright install chromium` can run in this environment,',
       'or set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to an existing Chromium/Chrome binary.',
     ].join(' '));
   } else {
