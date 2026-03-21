@@ -12,22 +12,20 @@
         <div class="hero-copy">
           <p class="eyebrow">Static JSON workspace</p>
           <h1>JSON Navigator</h1>
-          <p class="subtitle">Inspect nested data, find fields fast, and make focused edits without bouncing between a raw file and a text editor.</p>
-          <div class="hero-meta">
-            <span class="meta-chip">Responsive tree explorer</span>
-            <span class="meta-chip">Inline value editor</span>
-            <span class="meta-chip">Local-only file workflow</span>
-          </div>
+          <p class="subtitle">Inspect nested data, find fields quickly, and make focused edits without switching back to raw source.</p>
         </div>
 
-        <div class="hero-card">
-          <p class="hero-card-label">Quick start</p>
-          <p class="hero-card-text">Open any JSON file to populate the tree. Search keeps matching branches visible so you never lose context.</p>
-          <div class="header-actions">
-            <label class="button button-primary file-button" for="file-input">Open JSON</label>
-            <input id="file-input" type="file" accept="application/json,.json" />
-            <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
-          </div>
+        <div class="topbar-actions">
+          <label class="button button-primary file-button" for="file-input">Open JSON</label>
+          <input id="file-input" type="file" accept="application/json,.json" />
+          <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+        </div>
+
+        <div class="workspace-banner" aria-label="Workspace status">
+          <span class="meta-chip">Local-only workflow</span>
+          <span class="meta-chip">Drag &amp; drop supported</span>
+          <span class="meta-chip">⌘/Ctrl+F search</span>
+          <span class="meta-chip">⌘/Ctrl+S save</span>
         </div>
       </header>
 
@@ -41,7 +39,7 @@
           <div class="panel-header panel-header-stack">
             <div>
               <h2>Structure</h2>
-              <p class="panel-copy">Browse paths, inspect summaries, and filter by key, full path, or visible value preview.</p>
+              <p class="panel-copy">Search by key, path, or value preview and keep matching branches visible.</p>
             </div>
             <label class="search-shell" aria-label="Filter JSON keys">
               <span class="search-icon" aria-hidden="true">⌕</span>
@@ -51,6 +49,8 @@
           <div class="panel-toolbar" aria-label="Tree controls">
             <button id="expand-all-button" class="button button-secondary button-small" type="button" disabled>Expand all</button>
             <button id="collapse-all-button" class="button button-secondary button-small" type="button" disabled>Collapse nested</button>
+            <button id="clear-search-button" class="button button-ghost button-small hidden" type="button">Clear search</button>
+            <button id="edited-only-button" class="button button-ghost button-small" type="button" disabled>Edited only</button>
           </div>
           <div class="panel-status-row">
             <p id="tree-stats" class="panel-status">No file loaded</p>
@@ -62,17 +62,62 @@
         </aside>
 
         <section id="detail-panel" class="panel detail-panel">
+          <div class="workspace-summary" aria-label="Workspace overview">
+            <div class="summary-heading">
+              <div>
+                <p class="summary-label">Active document</p>
+                <h2 id="file-name" class="summary-title">No file selected</h2>
+              </div>
+              <div id="session-status" class="session-status">Waiting for a file</div>
+            </div>
+            <div class="summary-grid">
+              <article class="summary-card">
+                <span class="summary-card-label">Nodes</span>
+                <strong id="summary-nodes">0</strong>
+              </article>
+              <article class="summary-card">
+                <span class="summary-card-label">Primitives</span>
+                <strong id="summary-primitives">0</strong>
+              </article>
+              <article class="summary-card">
+                <span class="summary-card-label">Max depth</span>
+                <strong id="summary-depth">0</strong>
+              </article>
+              <article class="summary-card">
+                <span class="summary-card-label">Pending edits</span>
+                <strong id="summary-changes">0</strong>
+              </article>
+            </div>
+          </div>
+
           <div class="panel-header sticky">
             <div>
               <h2>Editor</h2>
               <p id="selection-path" class="selection-path">No field selected</p>
             </div>
-            <span id="dirty-indicator" class="pill">Saved</span>
+            <div class="editor-header-actions">
+              <button id="copy-path-button" class="button button-ghost button-small" type="button" disabled>Copy path</button>
+              <span id="dirty-indicator" class="pill">Saved</span>
+            </div>
+          </div>
+
+          <div class="selection-metadata">
+            <article class="metadata-card">
+              <span class="summary-card-label">Field status</span>
+              <strong id="selection-kind">Nothing selected</strong>
+              <p id="selection-summary" class="metadata-copy">Open a file and pick a node to inspect its value and status.</p>
+            </article>
+            <article class="metadata-card">
+              <span class="summary-card-label">Recent activity</span>
+              <ul id="activity-list" class="activity-list">
+                <li>No recent activity.</li>
+              </ul>
+            </article>
           </div>
 
           <div id="editor-empty" class="editor-empty">
             <h3>Ready when you are</h3>
-            <p>Pick a node from the structure view to inspect or edit it. Arrays and objects show summaries, while primitive values can be edited directly.</p>
+            <p>Select a node from the structure panel to inspect it. Primitive values can be edited directly and composite values are shown as read-only previews.</p>
           </div>
 
           <form id="editor-form" class="editor-form hidden">
@@ -115,8 +160,11 @@
               <textarea id="composite-value" rows="12" readonly></textarea>
             </label>
 
+            <p id="editor-hint" class="editor-hint">Use the tree to select a node, then edit strings, numbers, or booleans with confidence.</p>
+            <p id="validation-message" class="validation-message hidden" role="alert"></p>
+
             <div class="editor-actions">
-              <button id="save-button" class="button button-primary" type="submit">Save changes</button>
+              <button id="save-button" class="button button-primary" type="submit" disabled>Save changes</button>
               <button id="reset-button" class="button button-secondary" type="button">Reset field</button>
             </div>
           </form>
@@ -130,7 +178,10 @@
           <span class="tree-toggle-icon" aria-hidden="true">▾</span>
         </button>
         <button class="tree-node" type="button">
-          <span class="tree-node-path"></span>
+          <span class="tree-node-topline">
+            <span class="tree-node-path"></span>
+            <span class="tree-node-badges"></span>
+          </span>
           <span class="tree-node-summary"></span>
         </button>
       </div>
