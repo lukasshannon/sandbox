@@ -3,6 +3,8 @@ const INDENT_REM = 0.85;
 const HIDDEN_CLASS = 'hidden';
 const ACTIVE_CLASS = 'active';
 const COMPOSITE_CLASS = 'tree-node-composite';
+const MODIFIED_CLASS = 'tree-node-modified';
+const MAX_ACTIVITY_ITEMS = 4;
 
 const state = {
   sourceName: '',
@@ -21,6 +23,10 @@ const state = {
   treeBuilt: false,
   visibleCount: 0,
   mobilePanel: 'structure',
+  primitiveCount: 0,
+  maxDepth: 0,
+  activity: ['No recent activity.'],
+  reviewEditedOnly: false,
 };
 
 const refs = {
@@ -50,9 +56,24 @@ const refs = {
   compositeValueGroup: document.querySelector('#composite-value-group'),
   compositeValue: document.querySelector('#composite-value'),
   resetButton: document.querySelector('#reset-button'),
+  saveButton: document.querySelector('#save-button'),
+  validationMessage: document.querySelector('#validation-message'),
   nodeTemplate: document.querySelector('#tree-node-template'),
   showStructureButton: document.querySelector('#show-structure-button'),
   showEditorButton: document.querySelector('#show-editor-button'),
+  fileName: document.querySelector('#file-name'),
+  summaryNodes: document.querySelector('#summary-nodes'),
+  summaryPrimitives: document.querySelector('#summary-primitives'),
+  summaryDepth: document.querySelector('#summary-depth'),
+  summaryChanges: document.querySelector('#summary-changes'),
+  copyPathButton: document.querySelector('#copy-path-button'),
+  clearSearchButton: document.querySelector('#clear-search-button'),
+  editedOnlyButton: document.querySelector('#edited-only-button'),
+  editorHint: document.querySelector('#editor-hint'),
+  selectionKind: document.querySelector('#selection-kind'),
+  selectionSummary: document.querySelector('#selection-summary'),
+  activityList: document.querySelector('#activity-list'),
+  sessionStatus: document.querySelector('#session-status'),
 };
 
 const isComposite = (value) => value !== null && typeof value === 'object';
@@ -64,6 +85,21 @@ function describeValue(value) {
   if (typeof value === 'object') return `Object (${Object.keys(value).length} keys)`;
   if (typeof value === 'string') return value.length ? `String · ${value}` : 'Empty string';
   return `${typeof value} · ${String(value)}`;
+}
+
+function formatSelectionLabel(type, entry) {
+  if (!entry) return 'Nothing selected';
+  if (entry.path === ROOT_PATH) return 'Root document';
+  return `${type} · ${entry.key}`;
+}
+
+function addActivity(message) {
+  state.activity = [message, ...state.activity.filter((item) => item !== 'No recent activity.')].slice(0, MAX_ACTIVITY_ITEMS);
+}
+
+function setValidationMessage(message = '') {
+  refs.validationMessage.textContent = message;
+  refs.validationMessage.classList.toggle(HIDDEN_CLASS, !message);
 }
 
 function getValueAtSegments(root, segments) {
@@ -86,6 +122,8 @@ function setValueAtSegments(root, segments, nextValue) {
 function createTreeIndex(root) {
   const entries = [];
   const pathLookup = new Map();
+  let primitiveCount = 0;
+  let maxDepth = 0;
   const stack = [{ value: root, path: ROOT_PATH, key: ROOT_PATH, depth: 0, parentIndex: -1, segments: [] }];
 
   while (stack.length) {
@@ -104,10 +142,13 @@ function createTreeIndex(root) {
       wrap: null,
       element: null,
       toggle: null,
-      pathLabel: null,
       summaryLabel: null,
+      badges: null,
       visible: true,
     };
+
+    maxDepth = Math.max(maxDepth, depth);
+    if (!entry.isComposite) primitiveCount += 1;
 
     const entryIndex = entries.push(entry) - 1;
     pathLookup.set(path, entry);
@@ -140,7 +181,7 @@ function createTreeIndex(root) {
     }
   }
 
-  return { entries, pathLookup };
+  return { entries, pathLookup, primitiveCount, maxDepth };
 }
 
 function buildTreeDom() {
@@ -155,33 +196,31 @@ function buildTreeDom() {
   refs.emptyState.classList.add(HIDDEN_CLASS);
   const fragment = document.createDocumentFragment();
   const templateRoot = refs.nodeTemplate.content.firstElementChild;
-  const entries = state.treeIndex;
 
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
+  for (let index = 0; index < state.treeIndex.length; index += 1) {
+    const entry = state.treeIndex[index];
     const wrap = templateRoot.cloneNode(true);
     const toggle = wrap.querySelector('.tree-toggle');
     const node = wrap.querySelector('.tree-node');
     const pathLabel = wrap.querySelector('.tree-node-path');
     const summaryLabel = wrap.querySelector('.tree-node-summary');
+    const badges = wrap.querySelector('.tree-node-badges');
 
     wrap.dataset.index = String(index);
     wrap.style.setProperty('--tree-indent', `${entry.depth * INDENT_REM}rem`);
-    if (entry.isComposite) node.classList.add(COMPOSITE_CLASS);
-
     pathLabel.textContent = entry.path;
     summaryLabel.textContent = entry.summary;
 
     if (entry.isComposite) {
       toggle.classList.remove(HIDDEN_CLASS);
+      node.classList.add(COMPOSITE_CLASS);
     }
 
     entry.wrap = wrap;
     entry.element = node;
     entry.toggle = toggle;
-    entry.pathLabel = pathLabel;
     entry.summaryLabel = summaryLabel;
-    entry.visible = true;
+    entry.badges = badges;
 
     fragment.appendChild(wrap);
   }
@@ -196,9 +235,7 @@ function refreshPathMetadata(entry) {
   const summary = describeValue(value);
   entry.summary = summary;
   entry.searchText = `${entry.path} ${entry.key} ${summary}`.toLowerCase();
-  if (entry.summaryLabel) {
-    entry.summaryLabel.textContent = summary;
-  }
+  if (entry.summaryLabel) entry.summaryLabel.textContent = summary;
 }
 
 function refreshAncestorMetadata(entry) {
@@ -219,29 +256,36 @@ function revealDescendants(startIndex, entries, visible) {
 
 function applyCollapsedState() {
   const hasFilter = Boolean(state.filter);
+  for (const entry of state.treeIndex) {
+    if (!entry.toggle) continue;
+    const collapsed = state.collapsedPaths.has(entry.path);
+    entry.toggle.setAttribute('aria-expanded', String(!collapsed));
+    entry.wrap.classList.toggle('collapsed', collapsed);
+    entry.toggle.disabled = hasFilter;
+  }
+}
 
-  for (let index = 0; index < state.treeIndex.length; index += 1) {
-    const entry = state.treeIndex[index];
-    if (entry.toggle) {
-      const collapsed = state.collapsedPaths.has(entry.path);
-      entry.toggle.setAttribute('aria-expanded', String(!collapsed));
-      entry.wrap.classList.toggle('collapsed', collapsed);
-      entry.toggle.disabled = hasFilter;
-    }
+function renderNodeDecorators() {
+  for (const entry of state.treeIndex) {
+    if (!entry.element) continue;
+    const changed = state.changedPaths.has(entry.path);
+    entry.element.classList.toggle(MODIFIED_CLASS, changed);
+    entry.badges.innerHTML = [
+      changed ? '<span class="tree-badge tree-badge-warning">Edited</span>' : '',
+      entry.isComposite ? '<span class="tree-badge">Group</span>' : '',
+    ].join('');
   }
 }
 
 function applyTreeFilter() {
   if (!state.treeBuilt) return;
 
-  const filter = state.filter;
   const entries = state.treeIndex;
-  const length = entries.length;
-  const visible = new Uint8Array(length);
+  const visible = new Uint8Array(entries.length);
 
-  if (!filter) {
+  if (!state.filter && !state.reviewEditedOnly) {
     visible.fill(1);
-    for (let index = 0; index < length; index += 1) {
+    for (let index = 0; index < entries.length; index += 1) {
       let currentIndex = entries[index].parentIndex;
       while (currentIndex !== -1) {
         if (state.collapsedPaths.has(entries[currentIndex].path)) {
@@ -253,12 +297,12 @@ function applyTreeFilter() {
     }
   } else {
     visible[0] = 1;
-    for (let index = 0; index < length; index += 1) {
-      if (!entries[index].searchText.includes(filter)) continue;
+    for (let index = 0; index < entries.length; index += 1) {
+      const matchesFilter = !state.filter || entries[index].searchText.includes(state.filter);
+      const matchesEditedReview = !state.reviewEditedOnly || state.changedPaths.has(entries[index].path);
+      if (!matchesFilter || !matchesEditedReview) continue;
       visible[index] = 1;
-      if (entries[index].isComposite) {
-        revealDescendants(index, entries, visible);
-      }
+      if (entries[index].isComposite) revealDescendants(index, entries, visible);
       let currentIndex = entries[index].parentIndex;
       while (currentIndex !== -1 && visible[currentIndex] === 0) {
         visible[currentIndex] = 1;
@@ -268,64 +312,149 @@ function applyTreeFilter() {
   }
 
   let visibleCount = 0;
-  for (let index = 0; index < length; index += 1) {
-    const entry = entries[index];
+  for (let index = 0; index < entries.length; index += 1) {
     const nextVisible = visible[index] === 1;
     if (nextVisible) visibleCount += 1;
-    if (entry.visible !== nextVisible) {
-      entry.visible = nextVisible;
-      entry.wrap.classList.toggle(HIDDEN_CLASS, !nextVisible);
-    }
+    entries[index].visible = nextVisible;
+    entries[index].wrap.classList.toggle(HIDDEN_CLASS, !nextVisible);
   }
 
   state.visibleCount = visibleCount;
-  refs.searchEmpty.classList.toggle(HIDDEN_CLASS, !(filter && visibleCount <= 1));
+  refs.searchEmpty.classList.toggle(HIDDEN_CLASS, !((state.filter || state.reviewEditedOnly) && visibleCount <= 1));
+  refs.clearSearchButton.classList.toggle(HIDDEN_CLASS, !state.filter);
+  refs.editedOnlyButton.classList.toggle('is-active', state.reviewEditedOnly);
   applyCollapsedState();
 }
 
 function updateActiveNode() {
-  const previous = state.selectedEntry;
-  const next = state.pathLookup.get(state.selectedPath) ?? null;
+  state.selectedEntry?.element?.classList.remove(ACTIVE_CLASS);
+  state.selectedEntry = state.pathLookup.get(state.selectedPath) ?? null;
+  state.selectedEntry?.element?.classList.add(ACTIVE_CLASS);
+}
 
-  if (previous?.element) {
-    previous.element.classList.remove(ACTIVE_CLASS);
+function getSelectedValue() {
+  if (!state.selectedPath || state.data === null) return null;
+  const entry = state.pathLookup.get(state.selectedPath);
+  return entry ? getValueAtSegments(state.data, entry.segments) : null;
+}
+
+function getOriginalSelectedValue() {
+  if (!state.selectedPath || state.originalData === null) return null;
+  const entry = state.pathLookup.get(state.selectedPath);
+  return entry ? getValueAtSegments(state.originalData, entry.segments) : null;
+}
+
+function getEditorDraftState() {
+  const entry = state.pathLookup.get(state.selectedPath);
+  if (!entry || state.data === null) return { canEdit: false, changed: false, valid: false, nextValue: null, type: '' };
+
+  const currentValue = getValueAtSegments(state.data, entry.segments);
+  const originalValue = getValueAtSegments(state.originalData, entry.segments);
+  const type = Array.isArray(currentValue) ? 'array' : currentValue === null ? 'null' : typeof currentValue;
+
+  if (type === 'string') {
+    const nextValue = refs.textValue.value;
+    return { canEdit: true, changed: JSON.stringify(nextValue) !== JSON.stringify(originalValue), valid: true, nextValue, type };
   }
-  if (next?.element) {
-    next.element.classList.add(ACTIVE_CLASS);
+
+  if (type === 'number') {
+    const raw = refs.numberValue.value;
+    const valid = raw.trim() !== '' && Number.isFinite(Number(raw));
+    const nextValue = valid ? Number(raw) : null;
+    return {
+      canEdit: true,
+      changed: valid && JSON.stringify(nextValue) !== JSON.stringify(originalValue),
+      valid,
+      nextValue,
+      type,
+    };
   }
 
-  state.selectedEntry = next;
-}
-
-function renderTree() {
-  if (!state.treeBuilt) {
-    buildTreeDom();
+  if (type === 'boolean') {
+    const nextValue = refs.booleanValue.value === 'true';
+    return { canEdit: true, changed: JSON.stringify(nextValue) !== JSON.stringify(originalValue), valid: true, nextValue, type };
   }
-  applyTreeFilter();
-  updateActiveNode();
+
+  return { canEdit: false, changed: false, valid: false, nextValue: null, type };
 }
 
+function renderWorkspaceSummary() {
+  if (state.data === null) {
+    refs.fileName.textContent = 'No file selected';
+    refs.summaryNodes.textContent = '0';
+    refs.summaryPrimitives.textContent = '0';
+    refs.summaryDepth.textContent = '0';
+    refs.summaryChanges.textContent = '0';
+    refs.sessionStatus.textContent = 'Waiting for a file';
+    return;
+  }
 
-function isDesktopLayout() {
-  return window.matchMedia('(min-width: 980px)').matches;
+  refs.fileName.textContent = state.sourceName || 'Untitled JSON';
+  refs.summaryNodes.textContent = String(state.treeIndex.length);
+  refs.summaryPrimitives.textContent = `${state.primitiveCount} primitive${state.primitiveCount === 1 ? '' : 's'}`;
+  refs.summaryDepth.textContent = `${state.maxDepth} level${state.maxDepth === 1 ? '' : 's'}`;
+  refs.summaryChanges.textContent = `${state.changedPaths.size} pending`;
+  refs.sessionStatus.textContent = state.changedPaths.size > 0 ? 'Unsaved local edits' : 'No pending edits';
 }
 
-function setMobilePanel(panel) {
-  state.mobilePanel = panel;
-  document.body.classList.toggle('mobile-structure-active', panel === 'structure');
-  document.body.classList.toggle('mobile-editor-active', panel === 'editor');
-  refs.showStructureButton?.classList.toggle('is-selected', panel === 'structure');
-  refs.showEditorButton?.classList.toggle('is-selected', panel === 'editor');
-  refs.showStructureButton?.setAttribute('aria-selected', String(panel === 'structure'));
-  refs.showEditorButton?.setAttribute('aria-selected', String(panel === 'editor'));
+function renderTreeStats() {
+  if (state.data === null) {
+    refs.treeStats.textContent = 'No file loaded';
+    refs.searchStatus.textContent = 'Showing all nodes';
+    refs.searchEmpty.classList.add(HIDDEN_CLASS);
+    return;
+  }
+
+  refs.treeStats.textContent = `${state.treeIndex.length} nodes indexed${state.collapsedPaths.size ? ` · ${state.collapsedPaths.size} collapsed` : ''}`;
+  if (!state.filter && !state.reviewEditedOnly) refs.searchStatus.textContent = state.collapsedPaths.size ? `Showing ${state.visibleCount} visible nodes` : 'Showing all nodes';
+  else if (state.visibleCount <= 1) refs.searchStatus.textContent = state.reviewEditedOnly && !state.filter ? 'No edited fields to review' : `No matches for “${state.filter}”`;
+  else if (state.reviewEditedOnly && state.filter) refs.searchStatus.textContent = `Reviewing ${state.visibleCount} edited matches`;
+  else if (state.reviewEditedOnly) refs.searchStatus.textContent = `Reviewing ${state.visibleCount} edited nodes`;
+  else refs.searchStatus.textContent = `Filtered to ${state.visibleCount} visible nodes`;
 }
 
-function setEditorGroups(type) {
-  refs.textValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'string');
-  refs.numberValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'number');
-  refs.booleanValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'boolean');
-  refs.nullValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'null');
-  refs.compositeValueGroup.classList.toggle(HIDDEN_CLASS, type === 'string' || type === 'number' || type === 'boolean' || type === 'null');
+function renderDirtyState() {
+  const dirty = state.changedPaths.size > 0;
+  refs.dirtyIndicator.textContent = dirty ? `${state.changedPaths.size} unsaved change${state.changedPaths.size === 1 ? '' : 's'}` : 'Saved';
+  refs.dirtyIndicator.classList.toggle('is-dirty', dirty);
+  refs.downloadButton.disabled = state.data === null;
+  refs.expandAllButton.disabled = state.data === null || state.filter.length > 0 || state.reviewEditedOnly;
+  refs.collapseAllButton.disabled = state.data === null || state.filter.length > 0 || state.reviewEditedOnly;
+  refs.editedOnlyButton.disabled = state.data === null || state.changedPaths.size === 0;
+}
+
+function renderSelectionMetadata(entry, value, originalValue, type) {
+  if (!entry || state.data === null) {
+    refs.selectionKind.textContent = 'Nothing selected';
+    refs.selectionSummary.textContent = 'Open a file and pick a node to inspect its value and status.';
+  } else {
+    const changed = JSON.stringify(value) !== JSON.stringify(originalValue);
+    refs.selectionKind.textContent = formatSelectionLabel(type, entry);
+    refs.selectionSummary.textContent = changed
+      ? 'This field differs from the original source and will be included in the downloaded file.'
+      : entry.isComposite
+        ? 'Composite nodes are read-only previews so you can inspect structure safely.'
+        : 'This field matches the original source and is ready for focused editing.';
+  }
+
+  refs.activityList.innerHTML = state.activity.map((item) => `<li>${item}</li>`).join('');
+}
+
+function renderEditorControls() {
+  const draft = getEditorDraftState();
+  const selectedValue = getSelectedValue();
+  const type = Array.isArray(selectedValue) ? 'array' : selectedValue === null ? 'null' : typeof selectedValue;
+
+  if (!draft.canEdit) {
+    refs.saveButton.disabled = true;
+    setValidationMessage('');
+    refs.resetButton.disabled = type === 'array' || type === 'object' || type === 'null' || state.selectedPath === ROOT_PATH;
+    return;
+  }
+
+  refs.saveButton.disabled = !draft.valid || !draft.changed;
+  refs.resetButton.disabled = !draft.changed || state.selectedPath === ROOT_PATH;
+  setValidationMessage(draft.type === 'number' && !draft.valid ? 'Enter a valid number before saving.' : '');
 }
 
 function renderEditor() {
@@ -333,6 +462,10 @@ function renderEditor() {
     refs.editorEmpty.classList.remove(HIDDEN_CLASS);
     refs.editorForm.classList.add(HIDDEN_CLASS);
     refs.selectionPath.textContent = 'No field selected';
+    refs.copyPathButton.disabled = true;
+    refs.editorHint.textContent = 'Use the tree to select a node, then edit strings, numbers, or booleans with confidence.';
+    setValidationMessage('');
+    renderSelectionMetadata(null, null, null, '');
     return;
   }
 
@@ -347,107 +480,48 @@ function renderEditor() {
   refs.selectionPath.textContent = entry.path;
   refs.valueType.value = type;
   refs.valueKey.value = entry.key;
-  setEditorGroups(type);
+  refs.copyPathButton.disabled = false;
 
-  if (type === 'string') {
-    refs.textValue.value = value;
-  } else if (type === 'number') {
-    refs.numberValue.value = value;
-  } else if (type === 'boolean') {
-    refs.booleanValue.value = String(value);
-  } else if (type === 'array' || type === 'object') {
-    refs.compositeValue.value = JSON.stringify(value, null, 2);
-  }
+  refs.textValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'string');
+  refs.numberValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'number');
+  refs.booleanValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'boolean');
+  refs.nullValueGroup.classList.toggle(HIDDEN_CLASS, type !== 'null');
+  refs.compositeValueGroup.classList.toggle(HIDDEN_CLASS, !['array', 'object'].includes(type));
 
-  const changed = JSON.stringify(value) !== JSON.stringify(originalValue);
-  refs.resetButton.disabled = !changed || entry.path === ROOT_PATH;
+  if (type === 'string') refs.textValue.value = value;
+  else if (type === 'number') refs.numberValue.value = String(value);
+  else if (type === 'boolean') refs.booleanValue.value = String(value);
+  else if (type === 'array' || type === 'object') refs.compositeValue.value = JSON.stringify(value, null, 2);
+
+  refs.editorHint.textContent = entry.isComposite
+    ? 'Composite nodes are read-only previews. Select a primitive field to make an editable change.'
+    : 'Save applies only to the selected field, which makes focused edits easier to review.';
+
+  renderSelectionMetadata(entry, value, originalValue, type);
+  renderEditorControls();
 }
 
-function renderTreeStats() {
-  if (state.data === null) {
-    refs.treeStats.textContent = 'No file loaded';
-    refs.searchStatus.textContent = 'Showing all nodes';
-    refs.searchEmpty.classList.add(HIDDEN_CLASS);
-    return;
-  }
-
-  const collapsedCount = state.collapsedPaths.size;
-  refs.treeStats.textContent = `${state.treeIndex.length} nodes indexed${collapsedCount ? ` · ${collapsedCount} collapsed` : ''}`;
-  if (!state.filter) {
-    refs.searchStatus.textContent = state.collapsedPaths.size ? `Showing ${state.visibleCount} visible nodes` : 'Showing all nodes';
-  } else if (state.visibleCount <= 1) {
-    refs.searchStatus.textContent = `No matches for “${state.filter}”`;
-  } else {
-    refs.searchStatus.textContent = `Filtered to ${state.visibleCount} visible nodes`;
-  }
-}
-
-function renderDirtyState() {
-  const dirty = state.changedPaths.size > 0;
-  refs.dirtyIndicator.textContent = dirty ? 'Unsaved changes' : 'Saved';
-  refs.dirtyIndicator.style.background = dirty ? '#fff4db' : '#eaf7ef';
-  refs.dirtyIndicator.style.color = dirty ? '#8a5a00' : '#0f9d58';
-  refs.downloadButton.disabled = state.data === null;
-  refs.expandAllButton.disabled = state.data === null || state.filter.length > 0;
-  refs.collapseAllButton.disabled = state.data === null || state.filter.length > 0;
+function renderTree() {
+  if (!state.treeBuilt) buildTreeDom();
+  applyTreeFilter();
+  updateActiveNode();
+  renderNodeDecorators();
 }
 
 function render() {
   renderTree();
-  renderEditor();
+  renderWorkspaceSummary();
   renderTreeStats();
   renderDirtyState();
+  renderEditor();
 }
 
-function scheduleTreeRender() {
-  if (state.searchFrame) {
-    cancelAnimationFrame(state.searchFrame);
-  }
-
-  state.searchFrame = requestAnimationFrame(() => {
-    state.searchFrame = 0;
-    renderTree();
-    renderTreeStats();
-    renderDirtyState();
-  });
-}
-
-refs.treeView.addEventListener('click', (event) => {
-  const toggle = event.target.closest('.tree-toggle');
-  if (toggle) {
-    const wrap = toggle.closest('.tree-node-wrap');
-    const entry = state.treeIndex[Number(wrap?.dataset.index)];
-    if (!entry || !entry.isComposite || state.filter) return;
-
-    if (state.collapsedPaths.has(entry.path)) {
-      state.collapsedPaths.delete(entry.path);
-    } else {
-      state.collapsedPaths.add(entry.path);
-    }
-
-    renderTree();
-    renderTreeStats();
-    renderDirtyState();
+async function loadJsonFile(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+    alert('Please choose a valid JSON file.');
     return;
   }
-
-  const node = event.target.closest('.tree-node');
-  if (!node) return;
-
-  const wrap = node.closest('.tree-node-wrap');
-  const entry = state.treeIndex[Number(wrap?.dataset.index)];
-  if (!entry || state.selectedPath === entry.path) return;
-
-  state.selectedPath = entry.path;
-  if (!isDesktopLayout()) {
-    setMobilePanel('editor');
-  }
-  render();
-});
-
-refs.fileInput.addEventListener('change', async (event) => {
-  const [file] = event.target.files;
-  if (!file) return;
 
   try {
     const text = await file.text();
@@ -457,75 +531,141 @@ refs.fileInput.addEventListener('change', async (event) => {
     state.selectedPath = ROOT_PATH;
     state.selectedEntry = null;
     state.collapsedPaths.clear();
+    state.changedPaths.clear();
+    state.activity = [];
+    state.reviewEditedOnly = false;
+    addActivity(`Loaded ${file.name}.`);
+
     if (state.searchDebounceTimer) {
       clearTimeout(state.searchDebounceTimer);
       state.searchDebounceTimer = 0;
     }
+
     state.pendingFilter = refs.searchInput.value.trim().toLowerCase();
     state.filter = state.pendingFilter;
-    state.changedPaths.clear();
 
-    const { entries, pathLookup } = createTreeIndex(state.data);
+    const { entries, pathLookup, primitiveCount, maxDepth } = createTreeIndex(state.data);
     state.treeIndex = entries;
     state.pathLookup = pathLookup;
+    state.primitiveCount = primitiveCount;
+    state.maxDepth = maxDepth;
     state.treeBuilt = false;
-    setMobilePanel('structure');
+
+    if (!window.matchMedia('(min-width: 980px)').matches) {
+      setMobilePanel('structure');
+    }
 
     render();
   } catch (error) {
     alert(`Could not parse JSON: ${error.message}`);
   }
-});
+}
 
-function queueTreeFilter(value) {
-  state.pendingFilter = value.trim().toLowerCase();
+function scheduleTreeRender() {
+  if (state.searchFrame) cancelAnimationFrame(state.searchFrame);
+  state.searchFrame = requestAnimationFrame(() => {
+    state.searchFrame = 0;
+    renderTree();
+    renderTreeStats();
+    renderDirtyState();
+  });
+}
 
-  if (state.searchDebounceTimer) {
-    clearTimeout(state.searchDebounceTimer);
+function setMobilePanel(panel) {
+  state.mobilePanel = panel;
+  document.body.classList.toggle('mobile-structure-active', panel === 'structure');
+  document.body.classList.toggle('mobile-editor-active', panel === 'editor');
+  refs.showStructureButton.classList.toggle('is-selected', panel === 'structure');
+  refs.showEditorButton.classList.toggle('is-selected', panel === 'editor');
+  refs.showStructureButton.setAttribute('aria-selected', String(panel === 'structure'));
+  refs.showEditorButton.setAttribute('aria-selected', String(panel === 'editor'));
+}
+
+refs.treeView.addEventListener('click', (event) => {
+  const toggle = event.target.closest('.tree-toggle');
+  if (toggle) {
+    const entry = state.treeIndex[Number(toggle.closest('.tree-node-wrap')?.dataset.index)];
+    if (!entry || !entry.isComposite || state.filter) return;
+    if (state.collapsedPaths.has(entry.path)) state.collapsedPaths.delete(entry.path);
+    else state.collapsedPaths.add(entry.path);
+    renderTree();
+    renderTreeStats();
+    return;
   }
 
+  const node = event.target.closest('.tree-node');
+  if (!node) return;
+  const entry = state.treeIndex[Number(node.closest('.tree-node-wrap')?.dataset.index)];
+  if (!entry || state.selectedPath === entry.path) return;
+  state.selectedPath = entry.path;
+  if (!window.matchMedia('(min-width: 980px)').matches) setMobilePanel('editor');
+  render();
+});
+
+refs.fileInput.addEventListener('change', async (event) => {
+  await loadJsonFile(event.target.files[0]);
+});
+
+refs.searchInput.addEventListener('input', (event) => {
+  if (!window.matchMedia('(min-width: 980px)').matches) setMobilePanel('structure');
+  state.pendingFilter = event.target.value.trim().toLowerCase();
+  if (state.searchDebounceTimer) clearTimeout(state.searchDebounceTimer);
   state.searchDebounceTimer = window.setTimeout(() => {
     state.searchDebounceTimer = 0;
     state.filter = state.pendingFilter;
     scheduleTreeRender();
   }, 120);
-}
+});
 
-refs.searchInput.addEventListener('input', (event) => {
-  if (!isDesktopLayout()) {
-    setMobilePanel('structure');
+refs.clearSearchButton.addEventListener('click', () => {
+  refs.searchInput.value = '';
+  state.pendingFilter = '';
+  state.filter = '';
+  scheduleTreeRender();
+  refs.searchInput.focus();
+});
+
+refs.showStructureButton.addEventListener('click', () => setMobilePanel('structure'));
+refs.showEditorButton.addEventListener('click', () => setMobilePanel('editor'));
+
+refs.editedOnlyButton.addEventListener('click', () => {
+  if (state.data === null || state.changedPaths.size === 0) return;
+  state.reviewEditedOnly = !state.reviewEditedOnly;
+  if (state.reviewEditedOnly && !state.changedPaths.has(state.selectedPath)) {
+    const [firstChangedPath] = state.changedPaths;
+    if (firstChangedPath) state.selectedPath = firstChangedPath;
   }
-  queueTreeFilter(event.target.value);
+  scheduleTreeRender();
+  renderEditor();
 });
 
-refs.showStructureButton?.addEventListener('click', () => {
-  setMobilePanel('structure');
-});
-
-refs.showEditorButton?.addEventListener('click', () => {
-  setMobilePanel('editor');
-});
-
-window.addEventListener('resize', () => {
-  setMobilePanel(state.mobilePanel);
+refs.copyPathButton.addEventListener('click', async () => {
+  if (!state.selectedPath) return;
+  try {
+    await navigator.clipboard.writeText(state.selectedPath);
+    addActivity(`Copied path ${state.selectedPath}.`);
+    renderSelectionMetadata(state.selectedEntry, getSelectedValue(), getOriginalSelectedValue(), refs.valueType.value);
+  } catch {
+    alert('Clipboard access is unavailable in this browser.');
+  }
 });
 
 refs.expandAllButton.addEventListener('click', () => {
   state.collapsedPaths.clear();
   renderTree();
   renderTreeStats();
-  renderDirtyState();
 });
 
 refs.collapseAllButton.addEventListener('click', () => {
   state.collapsedPaths = new Set(
-    state.treeIndex
-      .filter((entry) => entry.isComposite && entry.path !== ROOT_PATH)
-      .map((entry) => entry.path),
+    state.treeIndex.filter((entry) => entry.isComposite && entry.path !== ROOT_PATH).map((entry) => entry.path),
   );
   renderTree();
   renderTreeStats();
-  renderDirtyState();
+});
+
+refs.editorForm.addEventListener('input', () => {
+  renderEditorControls();
 });
 
 refs.editorForm.addEventListener('submit', (event) => {
@@ -533,29 +673,16 @@ refs.editorForm.addEventListener('submit', (event) => {
   const entry = state.pathLookup.get(state.selectedPath);
   if (!entry || entry.path === ROOT_PATH) return;
 
-  const currentValue = getValueAtSegments(state.data, entry.segments);
-  let nextValue = currentValue;
+  const draft = getEditorDraftState();
+  if (!draft.canEdit || !draft.valid || !draft.changed) return;
 
-  if (typeof currentValue === 'string') {
-    nextValue = refs.textValue.value;
-  } else if (typeof currentValue === 'number') {
-    nextValue = Number(refs.numberValue.value);
-  } else if (typeof currentValue === 'boolean') {
-    nextValue = refs.booleanValue.value === 'true';
-  } else {
-    return;
-  }
-
-  setValueAtSegments(state.data, entry.segments, nextValue);
-
+  setValueAtSegments(state.data, entry.segments, draft.nextValue);
   const originalValue = getValueAtSegments(state.originalData, entry.segments);
-  if (JSON.stringify(nextValue) === JSON.stringify(originalValue)) {
-    state.changedPaths.delete(entry.path);
-  } else {
-    state.changedPaths.add(entry.path);
-  }
+  if (JSON.stringify(draft.nextValue) === JSON.stringify(originalValue)) state.changedPaths.delete(entry.path);
+  else state.changedPaths.add(entry.path);
 
   refreshAncestorMetadata(entry);
+  addActivity(`Saved ${entry.path}.`);
   render();
 });
 
@@ -567,12 +694,12 @@ refs.resetButton.addEventListener('click', () => {
   setValueAtSegments(state.data, entry.segments, originalValue);
   state.changedPaths.delete(entry.path);
   refreshAncestorMetadata(entry);
+  addActivity(`Reset ${entry.path}.`);
   render();
 });
 
 refs.downloadButton.addEventListener('click', () => {
   if (state.data === null) return;
-
   const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -580,7 +707,47 @@ refs.downloadButton.addEventListener('click', () => {
   anchor.download = state.sourceName.replace(/\.json$/i, '') + '-edited.json';
   anchor.click();
   URL.revokeObjectURL(url);
+  addActivity(`Downloaded ${anchor.download}.`);
+  renderSelectionMetadata(state.selectedEntry, getSelectedValue(), getOriginalSelectedValue(), refs.valueType.value);
 });
+
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', async (event) => {
+  event.preventDefault();
+  const [file] = [...(event.dataTransfer?.files || [])];
+  await loadJsonFile(file);
+});
+
+window.addEventListener('keydown', (event) => {
+  const modifier = event.metaKey || event.ctrlKey;
+  if (modifier && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    refs.searchInput.focus();
+    refs.searchInput.select();
+  }
+
+  if (modifier && event.key.toLowerCase() === 's') {
+    if (refs.saveButton.disabled) return;
+    event.preventDefault();
+    refs.editorForm.requestSubmit();
+  }
+
+  if (event.key === 'Escape' && document.activeElement === refs.searchInput) {
+    refs.searchInput.value = '';
+    state.pendingFilter = '';
+    state.filter = '';
+    scheduleTreeRender();
+    refs.searchInput.blur();
+  }
+});
+
+window.addEventListener('beforeunload', (event) => {
+  if (state.changedPaths.size === 0) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
+window.addEventListener('resize', () => setMobilePanel(state.mobilePanel));
 
 setMobilePanel(state.mobilePanel);
 render();
