@@ -83,6 +83,21 @@ const refs = {
 const isComposite = (value) => value !== null && typeof value === 'object';
 const clone = (value) => structuredClone(value);
 
+function readStoredTheme() {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeTheme(theme) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Ignore storage failures so theme switching still works for the session.
+  }
+}
 
 function getSystemTheme() {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -94,6 +109,7 @@ function resolveTheme(theme = state.theme) {
 
 function applyTheme(theme = state.theme) {
   const resolvedTheme = resolveTheme(theme);
+  document.documentElement.dataset.themeSetting = theme;
   document.documentElement.dataset.theme = resolvedTheme;
   document.documentElement.style.colorScheme = resolvedTheme;
   if (refs.themeSelect && refs.themeSelect.value !== theme) refs.themeSelect.value = theme;
@@ -102,12 +118,12 @@ function applyTheme(theme = state.theme) {
 function setTheme(theme) {
   if (!VALID_THEMES.has(theme)) return;
   state.theme = theme;
-  window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  storeTheme(theme);
   applyTheme();
 }
 
 function initializeTheme() {
-  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  const storedTheme = readStoredTheme();
   state.theme = VALID_THEMES.has(storedTheme) ? storedTheme : 'system';
   applyTheme();
 }
