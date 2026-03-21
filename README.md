@@ -26,11 +26,10 @@ If your Codex session does not expose a browser screenshot tool, you can generat
 
 ```bash
 npm install
-npx playwright install chromium
 npm run screenshot
 ```
 
-The script starts a temporary static server, loads a sample JSON file into the app, and saves a mobile screenshot to `artifacts/json-navigator-mobile.png`.
+The screenshot script starts a temporary static server, loads a sample JSON file into the app, and saves a mobile screenshot to `artifacts/json-navigator-mobile.png`. It first tries a locally installed Chrome/Chromium binary, and if none is available it attempts to install Playwright Chromium automatically before launching the browser.
 
 If your environment blocks Playwright browser downloads, point the script at an existing local browser instead:
 
