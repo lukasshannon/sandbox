@@ -2,11 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="description" content="Mobile-first JSON explorer with resilient offline editing, accessible navigation, and fast local workflows." />
+    <link rel="manifest" href="site.webmanifest" />
     <title>JSON Navigator</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to workspace</a>
+    <div id="network-banner" class="network-banner hidden" role="status" aria-live="polite">
+      <strong>Offline mode:</strong> Cached UI is available and your last local session stays editable.
+    </div>
     <div class="app-shell">
       <header class="topbar">
         <div class="hero-copy">
@@ -18,7 +25,9 @@
         <div class="topbar-actions">
           <label class="button button-primary file-button" for="file-input">Open JSON</label>
           <input id="file-input" type="file" accept="application/json,.json" />
+          <button id="demo-button" class="button button-secondary" type="button">Load demo data</button>
           <button id="download-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+          <button id="share-button" class="button button-ghost" type="button" disabled>Share</button>
           <label class="theme-select" for="theme-select">
             <span class="theme-select-label">Theme</span>
             <select id="theme-select" aria-label="Choose color theme">
@@ -34,10 +43,28 @@
           <span class="meta-chip">Drag &amp; drop supported</span>
           <span class="meta-chip">⌘/Ctrl+F search</span>
           <span class="meta-chip">⌘/Ctrl+S save</span>
+          <span class="meta-chip">Works offline after first load</span>
         </div>
       </header>
 
-      <main class="layout">
+      <main id="main-content" class="layout">
+        <section id="onboarding-card" class="panel onboarding-card" aria-labelledby="onboarding-title">
+          <div>
+            <p class="eyebrow">Phone-first onboarding</p>
+            <h2 id="onboarding-title">Start in under a minute</h2>
+            <p class="panel-copy">Open a file or load the demo dataset, tap any field in the structure list, then save focused edits one value at a time. Your session is restored locally after refresh.</p>
+          </div>
+          <ol class="onboarding-list">
+            <li>Open JSON from your device or load demo data.</li>
+            <li>Search, filter, and select a field.</li>
+            <li>Edit primitive values and download the result when ready.</li>
+          </ol>
+          <div class="onboarding-actions">
+            <button id="dismiss-onboarding-button" class="button button-ghost button-small" type="button">Hide tips</button>
+            <button id="restore-session-button" class="button button-secondary button-small hidden" type="button">Restore last session</button>
+          </div>
+        </section>
+
         <div class="mobile-panel-switcher" role="tablist" aria-label="Panel navigation">
           <button id="show-structure-button" class="button button-secondary button-small mobile-panel-button is-selected" type="button" role="tab" aria-selected="true" aria-controls="navigation-panel">Structure</button>
           <button id="show-editor-button" class="button button-secondary button-small mobile-panel-button" type="button" role="tab" aria-selected="false" aria-controls="detail-panel">Editor</button>
@@ -51,7 +78,7 @@
             </div>
             <label class="search-shell" aria-label="Filter JSON keys">
               <span class="search-icon" aria-hidden="true">⌕</span>
-              <input id="search-input" type="search" placeholder="Search keys, paths, values" />
+              <input id="search-input" type="search" placeholder="Search keys, paths, values" enterkeyhint="search" autocomplete="off" spellcheck="false" />
             </label>
           </div>
           <div class="panel-toolbar" aria-label="Tree controls">
@@ -66,6 +93,9 @@
           </div>
           <p id="empty-state" class="empty-state">Choose a JSON file to start exploring.</p>
           <p id="search-empty" class="empty-state hidden">No matching nodes. Try a broader term.</p>
+          <div id="tree-skeleton" class="tree-skeleton hidden" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </div>
           <nav id="tree-view" class="tree-view" aria-label="JSON navigation"></nav>
         </aside>
 
@@ -128,7 +158,7 @@
             <p>Select a node from the structure panel to inspect it. Primitive values can be edited directly and composite values are shown as read-only previews.</p>
           </div>
 
-          <form id="editor-form" class="editor-form hidden">
+          <form id="editor-form" class="editor-form hidden" novalidate>
             <div class="editor-grid">
               <label>
                 <span>Type</span>
@@ -142,17 +172,17 @@
 
             <label id="text-value-group" class="hidden">
               <span>Value</span>
-              <textarea id="text-value" rows="8" placeholder="Enter a string value"></textarea>
+              <textarea id="text-value" rows="8" placeholder="Enter a string value" autocomplete="on" autocapitalize="sentences"></textarea>
             </label>
 
             <label id="number-value-group" class="hidden">
               <span>Number</span>
-              <input id="number-value" type="number" step="any" />
+              <input id="number-value" type="number" step="any" inputmode="decimal" enterkeyhint="done" aria-describedby="editor-hint validation-message" />
             </label>
 
             <label id="boolean-value-group" class="hidden">
               <span>Boolean</span>
-              <select id="boolean-value">
+              <select id="boolean-value" aria-describedby="editor-hint validation-message">
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
@@ -171,14 +201,18 @@
             <p id="editor-hint" class="editor-hint">Use the tree to select a node, then edit strings, numbers, or booleans with confidence.</p>
             <p id="validation-message" class="validation-message hidden" role="alert"></p>
 
-            <div class="editor-actions">
+            <div class="editor-actions sticky-actions">
               <button id="save-button" class="button button-primary" type="submit" disabled>Save changes</button>
               <button id="reset-button" class="button button-secondary" type="button">Reset field</button>
+              <button id="undo-button" class="button button-ghost" type="button" disabled>Undo last save</button>
             </div>
           </form>
         </section>
       </main>
     </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
     <template id="tree-node-template">
       <div class="tree-node-wrap">
@@ -195,6 +229,9 @@
       </div>
     </template>
 
-    <script src="app.js"></script>
+    <noscript>
+      <div class="noscript-banner">JSON Navigator needs JavaScript enabled to load, search, and edit local files.</div>
+    </noscript>
+    <script src="app.js" defer></script>
   </body>
 </html>

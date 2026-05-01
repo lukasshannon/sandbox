@@ -1,0 +1,17 @@
+{
+  "name": "JSON Navigator",
+  "short_name": "JSON Nav",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "description": "Mobile-first JSON editor with offline-ready local persistence.",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='28' fill='%230b1220'/%3E%3Cpath d='M38 31c-8 8-13 19-13 33s5 25 13 33' fill='none' stroke='%237ea2ff' stroke-width='11' stroke-linecap='round'/%3E%3Cpath d='M90 31c8 8 13 19 13 33s-5 25-13 33' fill='none' stroke='%2367e8f9' stroke-width='11' stroke-linecap='round'/%3E%3Cpath d='M53 89 75 39' fill='none' stroke='%23e5edf8' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
